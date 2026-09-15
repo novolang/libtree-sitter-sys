@@ -1,0 +1,42 @@
+[package]
+name        = "libtree-sitter-sys"
+version     = "0.1.0"
+description = "Bindings over libtree-sitter, the incremental parsing library: the parser, the syntax tree, the query engine and the language table, one declaration per C entry point."
+license     = "Apache-2.0"
+
+# NOT a `0.0.x` draft.  An interface release is the shape whose every
+# `pub fn` body is a `todo()`, and every `pub fn` here is an `@ffi`
+# declaration with no body at all — `novo pkg publish` reads that as a
+# release with bodies and refuses a `0.0.x` version for it.
+stability   = "experimental"
+
+# `sys`: the layer for a package that binds one C library and decides
+# nothing of its own.  Every `pub fn` below is an `@ffi` declaration of
+# a function in libtree-sitter, so the whole surface is `[ffi]`.
+layer       = "sys"
+
+category    = "bindings"
+
+# The one C library.  `libtree-sitter.so` is what the loader resolves
+# these symbols against; installing this package does not install it.
+wraps       = "libtree-sitter"
+
+tags        = ["ffi", "tree-sitter", "parser", "parsing", "syntax", "bindings"]
+repository  = "https://github.com/novolang/libtree-sitter-sys"
+maintainers = ["novo-lang"]
+novo        = ">= 0.8.9"
+
+[docs.pages]
+"README.md" = "The C entry points of libtree-sitter, one novo-lang declaration each"
+
+[dependencies]
+# None.  A binding over one C library depends on no novo-lang package.
+
+# The link flag for the `library = "tree-sitter"` name every declaration
+# in `src/` carries.  `libtree-sitter-dev` installs
+# `/usr/lib/<arch>/pkgconfig/tree-sitter.pc`, so pkg-config answers
+# `-ltree-sitter` on Debian and Ubuntu.  Without the block the default
+# is `-ltree-sitter`, which is the same flag on a system that put the
+# library somewhere the linker already looks.
+[ffi.tree-sitter]
+pkg_config = "tree-sitter"

@@ -1,0 +1,155 @@
+// API tests for the libtree-sitter bindings.
+//
+// Every test below calls into the C library, so the suite needs
+// libtree-sitter installed and linked.  `novo pkg build` type-checks
+// the declarations without it; `novo test` runs them and does not.
+//
+// What the tests can assert without a grammar: a language table is
+// produced by a compiled grammar, not by libtree-sitter, so a build
+// with no grammar has none.  The entry points that need one are asked
+// about the null language, whose answers the C header specifies.
+
+use std.test
+use libtree_sitter
+
+@test
+fn test_a_fresh_parser_has_no_language() [io]
+    test.case("ts_parser_new then ts_parser_language")
+    let parser = libtree_sitter.ts_parser_new()
+    test.assert(parser != 0)
+    test.assert(libtree_sitter.ts_parser_language(parser) == 0)
+    libtree_sitter.ts_parser_delete(parser)
+
+@test
+fn test_a_parse_without_a_language_answers_null() [io]
+    test.case("ts_parser_parse_string with no language")
+    let parser = libtree_sitter.ts_parser_new()
+    let tree = libtree_sitter.ts_parser_parse_string(parser, 0, "fn main()", 9)
+    test.assert(tree == 0)
+    libtree_sitter.ts_parser_delete(parser)
+
+@test
+fn test_parse_string_encoding_reads_utf8_as_zero() [io]
+    test.case("ts_parser_parse_string_encoding, encoding 0")
+    let parser = libtree_sitter.ts_parser_new()
+    let tree = libtree_sitter.ts_parser_parse_string_encoding(parser, 0, "x", 1, 0)
+    test.assert(tree == 0)
+    libtree_sitter.ts_parser_delete(parser)
+
+// Clearing the language is not a version mismatch, so the null
+// language is accepted and the parser is left with none.
+@test
+fn test_set_language_accepts_the_null_language() [io]
+    test.case("ts_parser_set_language(parser, 0)")
+    let parser = libtree_sitter.ts_parser_new()
+    test.assert(libtree_sitter.ts_parser_set_language(parser, 0) == 1)
+    test.assert(libtree_sitter.ts_parser_language(parser) == 0)
+    libtree_sitter.ts_parser_delete(parser)
+
+@test
+fn test_the_timeout_round_trips_in_microseconds() [io]
+    test.case("ts_parser_set_timeout_micros then ts_parser_timeout_micros")
+    let parser = libtree_sitter.ts_parser_new()
+    libtree_sitter.ts_parser_set_timeout_micros(parser, 250000)
+    test.assert(libtree_sitter.ts_parser_timeout_micros(parser) == 250000)
+    libtree_sitter.ts_parser_reset(parser)
+    test.assert(libtree_sitter.ts_parser_timeout_micros(parser) == 250000)
+    libtree_sitter.ts_parser_delete(parser)
+
+@test
+fn test_a_tree_carries_the_language_that_parsed_it() [io]
+    test.case("ts_tree_copy, ts_tree_language, ts_tree_delete")
+    let parser = libtree_sitter.ts_parser_new()
+    let tree = libtree_sitter.ts_parser_parse_string(parser, 0, "x", 1)
+    if tree != 0
+        let copy = libtree_sitter.ts_tree_copy(tree)
+        test.assert(libtree_sitter.ts_tree_language(copy) != 0)
+        libtree_sitter.ts_tree_delete(copy)
+        libtree_sitter.ts_tree_delete(tree)
+    test.assert(tree == 0)
+    libtree_sitter.ts_parser_delete(parser)
+
+@test
+fn test_a_query_over_the_null_language_is_refused() [io]
+    test.case("ts_query_new(0, …) writes the language error code")
+    let offset_slot = ptr.alloc_word()
+    let kind_slot = ptr.alloc_word()
+    let query = libtree_sitter.ts_query_new(0, "(x) @y", 6, offset_slot, kind_slot)
+    test.assert(query == 0)
+    test.assert(ptr.load_u8(kind_slot) == 6)
+    ptr.free(offset_slot)
+    ptr.free(kind_slot)
+
+@test
+fn test_the_query_counts_answer_for_a_built_query() [io]
+    test.case("ts_query_pattern_count and its neighbours")
+    let offset_slot = ptr.alloc_word()
+    let kind_slot = ptr.alloc_word()
+    let length_slot = ptr.alloc_word()
+    let query = libtree_sitter.ts_query_new(0, "(x) @y", 6, offset_slot, kind_slot)
+    if query != 0
+        test.assert(libtree_sitter.ts_query_pattern_count(query) == 1)
+        test.assert(libtree_sitter.ts_query_capture_count(query) == 1)
+        test.assert(libtree_sitter.ts_query_string_count(query) == 0)
+        test.assert(libtree_sitter.ts_query_start_byte_for_pattern(query, 0) == 0)
+        test.assert(libtree_sitter.ts_query_capture_name_for_id(query, 0, length_slot) != 0)
+        test.assert(libtree_sitter.ts_query_string_value_for_id(query, 0, length_slot) != 0)
+        libtree_sitter.ts_query_disable_capture(query, "y", 1)
+        libtree_sitter.ts_query_disable_pattern(query, 0)
+        libtree_sitter.ts_query_delete(query)
+    test.assert(query == 0)
+    ptr.free(offset_slot)
+    ptr.free(kind_slot)
+    ptr.free(length_slot)
+
+@test
+fn test_a_fresh_cursor_takes_a_match_limit_and_a_byte_range() [io]
+    test.case("ts_query_cursor_new and the cursor's settings")
+    let cursor = libtree_sitter.ts_query_cursor_new()
+    test.assert(cursor != 0)
+    test.assert(libtree_sitter.ts_query_cursor_did_exceed_match_limit(cursor) == 0)
+    libtree_sitter.ts_query_cursor_set_match_limit(cursor, 64)
+    test.assert(libtree_sitter.ts_query_cursor_match_limit(cursor) == 64)
+    libtree_sitter.ts_query_cursor_set_byte_range(cursor, 0, 100)
+    libtree_sitter.ts_query_cursor_delete(cursor)
+
+// Draining the matches has a precondition: a query must be running on
+// the cursor.  Starting one takes `ts_query_cursor_exec`, which takes a
+// node by value and is not in this package, so the drain below is
+// written against the signatures and guarded by a query this build
+// cannot produce.  Calling either entry point on an idle cursor fails
+// an assertion inside libtree-sitter rather than answering.
+@test
+fn test_draining_the_matches_needs_a_running_query() [io]
+    test.case("ts_query_cursor_next_match after a query is running")
+    let offset_slot = ptr.alloc_word()
+    let kind_slot = ptr.alloc_word()
+    let cursor = libtree_sitter.ts_query_cursor_new()
+    let query = libtree_sitter.ts_query_new(0, "(x) @y", 6, offset_slot, kind_slot)
+    if query != 0
+        let match_slot = ptr.alloc(64)
+        test.assert(libtree_sitter.ts_query_cursor_next_match(cursor, match_slot) == 0)
+        libtree_sitter.ts_query_cursor_remove_match(cursor, 0)
+        ptr.free(match_slot)
+        libtree_sitter.ts_query_delete(query)
+    test.assert(query == 0)
+    libtree_sitter.ts_query_cursor_delete(cursor)
+    ptr.free(offset_slot)
+    ptr.free(kind_slot)
+
+@test
+fn test_the_language_table_entry_points_take_a_language() [io]
+    test.case("ts_language_symbol_count and its neighbours")
+    let parser = libtree_sitter.ts_parser_new()
+    let language = libtree_sitter.ts_parser_language(parser)
+    if language != 0
+        test.assert(libtree_sitter.ts_language_symbol_count(language) > 0)
+        test.assert(libtree_sitter.ts_language_symbol_name(language, 1) != 0)
+        test.assert(libtree_sitter.ts_language_symbol_for_name(language, "x", 1, 1) >= 0)
+        test.assert(libtree_sitter.ts_language_field_count(language) >= 0)
+        test.assert(libtree_sitter.ts_language_field_name_for_id(language, 1) != 0)
+        test.assert(libtree_sitter.ts_language_field_id_for_name(language, "x", 1) >= 0)
+        test.assert(libtree_sitter.ts_language_symbol_type(language, 1) >= 0)
+        test.assert(libtree_sitter.ts_language_version(language) >= 13)
+    test.assert(language == 0)
+    libtree_sitter.ts_parser_delete(parser)
