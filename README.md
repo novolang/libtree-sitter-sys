@@ -3,46 +3,44 @@
 Tree-sitter is a parser generator tool and an incremental parsing
 library. It builds a concrete syntax tree for a source file and updates
 that tree efficiently as the file is edited. The library is written in
-C, and its interface is documented in
-[the tree-sitter manual](https://tree-sitter.github.io/tree-sitter/using-parsers).
-This package declares that C interface to novo-lang, one declaration per
-entry point.
+C, and its C API is documented in
+[the tree-sitter manual](https://tree-sitter.github.io/tree-sitter/using-parsers)
+and in the header `tree_sitter/api.h`. This package declares
+thirty-eight of its entry points to novo-lang, one declaration each.
 
-**Status: a binding, not a port.** Every function in this package is a
-declaration of a function in libtree-sitter. The package contains no
-logic of its own, and it does nothing without the C library installed.
-Thirty-eight of the library's entry points are here; the section "What
-is not included" says which are not, and why.
+Every function here is a declaration of a function in libtree-sitter.
+The package contains no logic of its own, and it does nothing without
+the C library installed. The section "What is not included" says which
+entry points are not here, and why.
 
 ## What it is
 
 A parser turns source text into a tree. Tree-sitter's trees are
-*concrete*: every token in the file has a node, including the brackets
-and the commas. That is what makes them useful to an editor, which has
-to map a position in the text to a position in the tree.
+*concrete*. Every token in the file has a node, including the brackets
+and the commas. An editor uses that to map a position in the text to a
+position in the tree.
 
 Tree-sitter is *incremental*. Given the previous tree for a file and a
 description of the edits made to it, the parser reuses the parts of the
 tree the edits did not touch. A keystroke in a large file costs a small
 reparse rather than a whole one.
 
-Tree-sitter is also *error tolerant*. A file that does not parse still
+Tree-sitter is also *error tolerant*. A file with syntax errors still
 produces a tree. The parts that could not be understood become error
-nodes, and the rest of the tree is the same tree the file would have
-produced without them.
+nodes, and the rest of the tree remains useful.
 
 A **grammar** is a separate thing from the library. Grammars are written
 in JavaScript, and the tree-sitter command line tool generates C from
-them. That C compiles to a shared library exporting one function,
+them. That C compiles to a library exporting one function,
 `tree_sitter_<name>`, which answers the address of a **language table**.
-The parsing library reads that table; it contains no grammar of its own.
-So a program that parses JSON needs libtree-sitter and a compiled JSON
-grammar, and this package is the first of the two.
+The parsing library reads that table, and it contains no grammar of its
+own. A program that parses JSON therefore needs libtree-sitter and a
+compiled JSON grammar, and this package binds the first of the two.
 
 A **query** is a pattern over a tree, written as an S-expression, with
-names attached to the nodes it should report. Queries are how syntax
-highlighting, structural search and code navigation are expressed, and
-the library runs them itself.
+names, called captures, attached to the nodes it should report.
+Syntax highlighting, structural search and code navigation are
+expressed as queries, and the library runs them itself.
 
 ## Install
 
@@ -94,9 +92,8 @@ fn main() [io, ffi]
     libtree_sitter.ts_parser_delete(parser)
 ```
 
-The example is fenced as an illustration rather than a compiled block
-because it needs a compiled JSON grammar, which this repository does not
-ship.
+The example is not compiled, because it needs a compiled JSON grammar,
+which this repository does not ship.
 
 ## What the package contains
 
@@ -119,10 +116,10 @@ The five groups and their sizes:
 1. **A pointer is an `Int`, and zero is null.** Every handle the C
    library returns arrives as the address it returned. Every entry point
    that allocates answers zero when it could not.
-2. **Every handle must be freed by its own function.** A parser by
-   `ts_parser_delete`, a tree by `ts_tree_delete`, a query by
-   `ts_query_delete`, a query cursor by `ts_query_cursor_delete`. A
-   language table belongs to the grammar and is never freed.
+2. **Every handle is freed by its own function.** `ts_parser_delete`
+   frees a parser, `ts_tree_delete` a tree, `ts_query_delete` a query
+   and `ts_query_cursor_delete` a query cursor. A language table belongs
+   to the grammar and is never freed.
 3. **A length is in bytes, and it is always passed.** The C functions
    take a pointer and a length rather than a terminated string, so
    `ts_parser_parse_string` is given the byte length of its buffer and
@@ -130,8 +127,8 @@ The five groups and their sizes:
 4. **An out-parameter is the address of a caller-owned slot.**
    `ts_query_new` writes the error offset and the error kind into two
    32-bit slots the caller supplies. `ptr.alloc_word` in the standard
-   library returns the address of such a slot, and `ptr.free` releases
-   it.
+   library returns the address of an eight-byte slot, which holds one,
+   and `ptr.free` releases it.
 5. **A string the library returns is owned by the library.** The node
    type names, the field names and the capture names are addresses of
    C strings inside the language table or the query. Read them with
@@ -139,55 +136,60 @@ The five groups and their sizes:
 6. **A grammar and the library must agree on a version.**
    `ts_parser_set_language` answers 0 when they do not, and
    `ts_language_version` says which version the grammar was generated
-   for.
+   for. libtree-sitter 0.20.8 accepts versions 13 and 14.
 7. **A query cursor must be executing a query before its matches are
-   drained.** `ts_query_cursor_next_match` on an idle cursor fails an
-   assertion inside the C library rather than answering. Starting a
-   query takes `ts_query_cursor_exec`, which is not in this package —
-   see below.
+   drained.** The C library does not check, and
+   `ts_query_cursor_next_match` on an idle cursor fails inside it rather
+   than answering. Starting a query takes `ts_query_cursor_exec`, which
+   is not in this package. The next section says why.
 
 ## What is not included
 
 - **Every entry point that passes or returns a structure by value.**
   The novo-lang foreign function interface passes integers, floats and
-  strings, and nothing else. `TSNode`, `TSPoint`, `TSRange`,
+  strings, and no structure by value. `TSNode`, `TSPoint`, `TSRange`,
   `TSTreeCursor` and `TSQueryMatch` are all passed by value in C. That
-  rules out the whole node API — `ts_node_type`, `ts_node_child`,
-  `ts_node_start_byte` and their forty neighbours — the whole tree
-  cursor API, `ts_tree_root_node`, and `ts_query_cursor_exec`. A program
-  that needs them writes a small C function of its own that takes the
-  same values behind pointers, and calls that.
+  rules out the whole node API, which includes `ts_node_type`,
+  `ts_node_child` and `ts_node_start_byte`. It also rules out the whole
+  tree cursor API, `ts_tree_root_node` and `ts_query_cursor_exec`. A
+  program that needs them writes a small C function of its own that
+  takes the same values behind pointers, and calls that.
 - **The callback-driven parse.** `ts_parser_parse` takes a `TSInput`
   structure holding a function pointer, and a novo-lang function is not
   a C function pointer. `ts_parser_parse_string` is the whole-buffer
   form and it is here.
 - **The editing entry points.** `ts_tree_edit` and `ts_node_edit` take a
   `TSInputEdit` structure the caller must lay out byte by byte. They are
-  left out until there is a way to describe a C structure in novo-lang.
+  left out of this release.
+- **The cancellation flag and the capture iterator.**
+  `ts_parser_set_cancellation_flag` and `ts_query_cursor_next_capture`
+  are left out of this release.
 - **The logger and the graph printers.** `ts_parser_set_logger` takes a
   function pointer. `ts_parser_print_dot_graphs` and
   `ts_tree_print_dot_graph` write to a file descriptor and are debugging
   aids for the C library's own authors.
 - **The custom allocator.** `ts_set_allocator` replaces the library's
-  `malloc` for the whole process, which is not a decision a library
-  binding should offer.
+  `malloc` for the whole process, including every other user of
+  libtree-sitter in it.
 - **Grammars.** This package binds the parsing library. A grammar is a
   separate shared library, built from a separate repository.
 
 ## Related packages
 
-`novo-syntax` is the lexer and parser for novo-lang itself, written in
-novo-lang with no C library. It is the right choice for a program that
-reads novo-lang source. It is planned and not published yet.
+[novo-syntax](https://novo-lang.org/packages/novo-syntax) is the lexer
+and parser for novo-lang itself, written in novo-lang with no C library.
+It is published as an interface release. Every function in it is
+declared and none has a body yet. When its functions have bodies, it is
+the choice for a program that reads novo-lang source.
 
-There is no novo-lang port of tree-sitter, and none is planned. A
-grammar is a table generated by a tool, and the value of tree-sitter is
-the hundreds of grammars that already exist for it.
+There is no novo-lang port of tree-sitter. A grammar is a table
+generated by the tree-sitter tool, and this package lets a program use
+the grammars that already exist for it.
 
 ## Tests
 
-`tests/libtree_sitter_tests.nv` holds eleven tests written against the
-signatures. They call the C library, so `novo test` needs
+`tests/libtree_sitter_tests.nv` holds eleven tests over the
+thirty-eight entry points. They call the C library, so `novo test` needs
 libtree-sitter installed and linkable:
 
 ```
@@ -197,26 +199,13 @@ novo test tests/libtree_sitter_tests.nv
 `novo pkg build` type-checks the declarations and needs nothing
 installed.
 
-The tests assert what can be observed without a grammar: that a fresh
-parser has no language, that a parse without one produces no tree, that
-the timeout is stored and read back, that a query over the null language
-is refused with the language error code, and that a fresh query cursor
-carries a match limit. The entry points that need a language table are
-written out in full and guarded by a language the suite cannot produce,
-so the signatures are exercised by the compiler even where the library
-cannot be asked.
-
-## Implementation status
-
-| Group | State |
-| --- | --- |
-| Parser | Complete for the buffer-parsing form. |
-| Syntax tree | Complete except the editing entry points. |
-| Query | Complete. |
-| Query cursor | Complete except `ts_query_cursor_exec`. |
-| Language table | Complete. |
-| Node | Absent. Every entry point passes a node by value. |
-| Tree cursor | Absent. Every entry point passes a cursor or a node by value. |
+The tests assert what can be observed without a grammar. A fresh parser
+has no language, and a parse without one produces no tree. The timeout
+is stored and read back. A query over the null language is refused with
+the language error code. A fresh query cursor takes a match limit and
+reports it back. The calls that need a language table are written out
+in full and guarded by a language the suite cannot produce, so the
+compiler checks them even where the library cannot be asked.
 
 ## Licence
 

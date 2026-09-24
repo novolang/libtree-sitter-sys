@@ -1,263 +1,453 @@
 // The C entry points of libtree-sitter, one novo-lang declaration each.
 //
-// A pointer is an `Int`: the C API hands out opaque handles for the
+// A pointer is an `Int`.  The C API hands out opaque handles for the
 // parser, the tree, the language table, the query and the query
 // cursor, and this module carries each of them as the address the C
 // library returned.  Zero is the null pointer, which is how every
 // allocating entry point below reports failure.
 //
-// A `Str` argument is passed as a NUL-terminated C string, and every
-// entry point that takes one also takes its length in bytes, exactly
-// as the C function does.
+// A `Str` argument is passed as a NUL-terminated C string.  Every entry
+// point that takes one also takes its length in bytes, as the C
+// function does.
 //
 // The entry points that pass or return a `TSNode`, a `TSPoint`, a
 // `TSRange`, a `TSTreeCursor` or a `TSQueryMatch` by value are not
-// here.  The README's "What is not included" section lists them.
+// declared here.  The README's "What is not included" section lists
+// them.
+//
+// The examples in these comments are fenced `novo ignore`, so `novo
+// doc` does not compile them.  A compiled example links against
+// libtree-sitter, and most of them also need a compiled grammar.
 
 // Create a new parser.
 //
 // The parser has no language until `ts_parser_set_language` assigns
-// one.  Zero means the allocation failed.
+// one.  Answers 0 when the allocation failed.
+//
+// ```novo ignore
+// let parser = libtree_sitter.ts_parser_new()
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_parser_new")
 fn ts_parser_new() -> Int [ffi]
 
-// Delete the parser, freeing all of the memory that it used.
+// Delete a parser, freeing all of the memory that it used.
+//
+// ```novo ignore
+// libtree_sitter.ts_parser_delete(parser)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_parser_delete")
 fn ts_parser_delete(parser: Int) [ffi]
 
-// Set the language that the parser should use for parsing.
+// Set the language that a parser uses for parsing.
 //
-// Returns 1 when the assignment succeeded and 0 when it did not.  A 0
-// means a version mismatch: the language was generated with an
-// incompatible version of the tree-sitter command line tool.  Compare
-// `ts_language_version` with the library's own
-// `TREE_SITTER_LANGUAGE_VERSION` to see which.
+// Answers 1 when the language was assigned and 0 when it was not.  A 0
+// means a version mismatch.  The language was generated with a version
+// of the tree-sitter command line tool this library does not accept.
+// `ts_language_version` gives the language's version, to compare with
+// the library's `TREE_SITTER_MIN_COMPATIBLE_LANGUAGE_VERSION` and
+// `TREE_SITTER_LANGUAGE_VERSION`.  Passing 0 removes the language and
+// answers 1.
+//
+// ```novo ignore
+// let assigned = libtree_sitter.ts_parser_set_language(parser, tree_sitter_json())
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_parser_set_language")
 fn ts_parser_set_language(parser: Int, language: Int) -> Int [ffi]
 
-// Get the parser's current language.
+// Get a parser's current language.
 //
-// Zero when no language has been assigned.
+// Answers 0 when no language has been assigned.
+//
+// ```novo ignore
+// let language = libtree_sitter.ts_parser_language(parser)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_parser_language")
 fn ts_parser_language(parser: Int) -> Int [ffi]
 
-// Use the parser to parse some source code stored in one contiguous
-// buffer, and create a syntax tree.
+// Parse source code stored in one contiguous buffer, and create a
+// syntax tree.
 //
-// Pass 0 for `old_tree` the first time a document is parsed.  Pass the
-// previous tree, already edited to match the source changes, to reuse
-// the unchanged parts of it.  `length` is the length of the buffer in
-// bytes.
+// Pass 0 for `old_tree` the first time a document is parsed.  To reuse
+// the unchanged parts of an earlier parse, pass the previous tree,
+// already edited with `ts_tree_edit` to match the source changes
+// exactly.  `length` is the length of the buffer in bytes.
 //
-// Returns a syntax tree, or 0 on failure.  There are three reasons for
-// a failure: the parser has no language assigned, the parse hit the
-// timeout set by `ts_parser_set_timeout_micros`, or the parse was
-// cancelled through the cancellation flag.
+// Answers a syntax tree, or 0 on failure.  A parse fails for one of
+// three reasons.  The parser has no language assigned.  The parse ran
+// past the timeout set by `ts_parser_set_timeout_micros`.  The parse
+// was cancelled through the flag `ts_parser_set_cancellation_flag`
+// sets.  After a timeout or a cancellation, calling again with the same
+// arguments resumes the parse, and `ts_parser_reset` starts it over.
+//
+// ```novo ignore
+// let tree = libtree_sitter.ts_parser_parse_string(parser, 0, source, 16)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_parser_parse_string")
 fn ts_parser_parse_string(parser: Int, old_tree: Int, source: Str, length: Int) -> Int [ffi]
 
-// Parse a contiguous buffer with a given encoding.
+// Parse source code stored in one contiguous buffer, in a given
+// encoding.
 //
 // The first four arguments are those of `ts_parser_parse_string`.
-// `encoding` is 0 for UTF-8 and 1 for UTF-16.
+// `encoding` is 0, `TSInputEncodingUTF8`, or 1, `TSInputEncodingUTF16`.
+// The answers are those of `ts_parser_parse_string`.
+//
+// ```novo ignore
+// let tree = libtree_sitter.ts_parser_parse_string_encoding(parser, 0, source, 16, 0)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_parser_parse_string_encoding")
 fn ts_parser_parse_string_encoding(parser: Int, old_tree: Int, source: Str, length: Int,
                                    encoding: Int) -> Int [ffi]
 
-// Instruct the parser to start the next parse from the beginning.
+// Instruct a parser to start the next parse from the beginning.
 //
-// A parser that stopped on a timeout or a cancellation resumes where
-// it left off by default.  Call this first to parse a different
-// document with the same parser instead.
+// A parser that stopped on a timeout or a cancellation resumes where it
+// left off by default.  Call this first to parse a different document
+// with the same parser.
+//
+// ```novo ignore
+// libtree_sitter.ts_parser_reset(parser)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_parser_reset")
 fn ts_parser_reset(parser: Int) [ffi]
 
-// Set the maximum duration in microseconds that parsing should be
-// allowed to take before halting.
+// Set the maximum duration in microseconds that parsing may take
+// before halting.
+//
+// A parse that takes longer halts early and answers 0.  A new parser
+// has a timeout of 0, which means no limit.
+//
+// ```novo ignore
+// libtree_sitter.ts_parser_set_timeout_micros(parser, 50000)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_parser_set_timeout_micros")
 fn ts_parser_set_timeout_micros(parser: Int, timeout: Int) [ffi]
 
-// Get the duration in microseconds that parsing is allowed to take.
+// Get the duration in microseconds that parsing may take.
+//
+// ```novo ignore
+// let limit = libtree_sitter.ts_parser_timeout_micros(parser)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_parser_timeout_micros")
 fn ts_parser_timeout_micros(parser: Int) -> Int [ffi]
 
-// Create a shallow copy of the syntax tree.
+// Create a shallow copy of a syntax tree.
 //
-// The copy is cheap, and it is how one tree is used from two threads
-// at once: each thread needs its own tree.
+// The copy is very fast.  A syntax tree is not thread safe, so each
+// thread that uses a tree needs a copy of its own.
+//
+// ```novo ignore
+// let for_other_thread = libtree_sitter.ts_tree_copy(tree)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_tree_copy")
 fn ts_tree_copy(tree: Int) -> Int [ffi]
 
-// Delete the syntax tree, freeing all of the memory that it used.
+// Delete a syntax tree, freeing all of the memory that it used.
+//
+// ```novo ignore
+// libtree_sitter.ts_tree_delete(tree)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_tree_delete")
 fn ts_tree_delete(tree: Int) [ffi]
 
-// Get the language that was used to parse the syntax tree.
+// Get the language that was used to parse a syntax tree.
+//
+// ```novo ignore
+// let language = libtree_sitter.ts_tree_language(tree)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_tree_language")
 fn ts_tree_language(tree: Int) -> Int [ffi]
 
 // Create a new query from a string containing one or more S-expression
 // patterns.
 //
-// `source_len` is the length of the pattern text in bytes.
-// `error_offset` and `error_type` are addresses of two 32-bit slots the
-// caller owns.  On a failure the return value is 0, the byte offset of
-// the error is written to `error_offset`, and a value describing the
-// kind of error is written to `error_type`: 1 for a syntax error, 2 for
-// an unknown node type, 3 for an unknown field, 4 for an unknown
-// capture, 5 for an impossible pattern structure, and 6 for a language
-// error.
+// The query belongs to one language and runs only on syntax nodes
+// parsed with that language.  `source_len` is the length of the
+// pattern text in bytes.  `error_offset` and `error_type` are the
+// addresses of two 32-bit slots the caller owns.  Answers the query
+// when every pattern is valid.  Otherwise it answers 0, writes the
+// byte offset of the error to `error_offset`, and writes the kind of
+// error to `error_type`.  The kinds are 1 for a syntax error, 2 for an
+// unknown node type, 3 for an unknown field, 4 for an unknown capture,
+// 5 for an impossible pattern structure and 6 for a language error.
+//
+// ```novo ignore
+// let query = libtree_sitter.ts_query_new(language, "(pair) @pair", 12, offset_slot, kind_slot)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_query_new")
 fn ts_query_new(language: Int, source: Str, source_len: Int, error_offset: Int,
                 error_type: Int) -> Int [ffi]
 
-// Delete the query, freeing all of the memory that it used.
+// Delete a query, freeing all of the memory that it used.
+//
+// ```novo ignore
+// libtree_sitter.ts_query_delete(query)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_query_delete")
 fn ts_query_delete(query: Int) [ffi]
 
-// Get the number of patterns in the query.
+// Get the number of patterns in a query.
+//
+// ```novo ignore
+// let patterns = libtree_sitter.ts_query_pattern_count(query)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_query_pattern_count")
 fn ts_query_pattern_count(query: Int) -> Int [ffi]
 
-// Get the number of captures in the query.
+// Get the number of captures in a query.
+//
+// ```novo ignore
+// let captures = libtree_sitter.ts_query_capture_count(query)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_query_capture_count")
 fn ts_query_capture_count(query: Int) -> Int [ffi]
 
-// Get the number of string literals in the query.
+// Get the number of string literals in a query.
+//
+// ```novo ignore
+// let strings = libtree_sitter.ts_query_string_count(query)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_query_string_count")
 fn ts_query_string_count(query: Int) -> Int [ffi]
 
-// Get the byte offset where the given pattern starts in the query's
-// source.
+// Get the byte offset where a pattern starts in a query's source.
 //
-// This is the offset a caller attributes a pattern error to when
-// several queries were concatenated into one source string.
+// The offset is useful when a query was built by concatenating the
+// source of several queries.
+//
+// ```novo ignore
+// let start = libtree_sitter.ts_query_start_byte_for_pattern(query, 0)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_query_start_byte_for_pattern")
 fn ts_query_start_byte_for_pattern(query: Int, pattern_index: Int) -> Int [ffi]
 
-// Get the name of one of the query's captures.
+// Get the name and length of one of a query's captures.
 //
-// The return value is the address of a NUL-terminated C string the
-// query owns.  `length` is the address of a 32-bit slot the caller
-// owns, and the length of the name in bytes is written to it.
+// Each capture has a numeric identifier, given in the order the
+// captures appear in the query's source.  The answer is the address of
+// a C string the query owns.  `length` is the address of a 32-bit slot
+// the caller owns, and the length of the name in bytes is written to
+// it.
+//
+// ```novo ignore
+// let name = ptr.read_str(libtree_sitter.ts_query_capture_name_for_id(query, 0, length_slot))
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_query_capture_name_for_id")
 fn ts_query_capture_name_for_id(query: Int, index: Int, length: Int) -> Int [ffi]
 
-// Get one of the query's string literals.
+// Get the value and length of one of a query's string literals.
 //
-// The return value and `length` work as they do in
-// `ts_query_capture_name_for_id`.
+// Each string literal has a numeric identifier, given in the order the
+// literals appear in the query's source.  The answer and `length` work
+// as they do for `ts_query_capture_name_for_id`.
+//
+// ```novo ignore
+// let text = ptr.read_str(libtree_sitter.ts_query_string_value_for_id(query, 0, length_slot))
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_query_string_value_for_id")
 fn ts_query_string_value_for_id(query: Int, index: Int, length: Int) -> Int [ffi]
 
 // Disable a capture within a query.
 //
-// The capture is no longer reported, and the work of computing it is
-// no longer done.  This cannot be undone.
+// `name` is the capture's name and `length` its length in bytes.  The
+// capture is no longer returned in matches, and no resources are spent
+// recording it.  There is no way to undo this.
+//
+// ```novo ignore
+// libtree_sitter.ts_query_disable_capture(query, "pair", 4)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_query_disable_capture")
 fn ts_query_disable_capture(query: Int, name: Str, length: Int) [ffi]
 
 // Disable a pattern within a query.
 //
-// The pattern no longer matches, and the work of matching it is no
-// longer done.  This cannot be undone.
+// The pattern no longer matches, and most of the work associated with
+// it is no longer done.  There is no way to undo this.
+//
+// ```novo ignore
+// libtree_sitter.ts_query_disable_pattern(query, 0)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_query_disable_pattern")
 fn ts_query_disable_pattern(query: Int, pattern_index: Int) [ffi]
 
-// Create a new cursor for executing a given query.
+// Create a new cursor for executing a query.
 //
-// The cursor holds the state needed to iterate over the matches.  One
-// cursor is reused for many queries, but for only one query at a time.
+// The cursor stores the state needed to search for matches.
+// `ts_query_cursor_exec` starts it running a query on a node, and a
+// later call to it starts another query on the same cursor.
+// `ts_query_cursor_exec` takes a node by value and is not declared
+// here.  Answers 0 when the allocation failed.
+//
+// ```novo ignore
+// let cursor = libtree_sitter.ts_query_cursor_new()
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_query_cursor_new")
 fn ts_query_cursor_new() -> Int [ffi]
 
-// Delete the query cursor, freeing all of the memory that it used.
+// Delete a query cursor, freeing all of the memory that it used.
+//
+// ```novo ignore
+// libtree_sitter.ts_query_cursor_delete(cursor)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_query_cursor_delete")
 fn ts_query_cursor_delete(cursor: Int) [ffi]
 
-// Get the maximum number of in-progress matches the cursor allows.
+// Get the maximum number of in-progress matches a cursor allows.
+//
+// A new cursor allows any number, and this answers `UINT32_MAX` for
+// it.
+//
+// ```novo ignore
+// let limit = libtree_sitter.ts_query_cursor_match_limit(cursor)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_query_cursor_match_limit")
 fn ts_query_cursor_match_limit(cursor: Int) -> Int [ffi]
 
-// Set the maximum number of in-progress matches the cursor allows.
+// Set the maximum number of in-progress matches a cursor allows.
+//
+// When the limit is exceeded, the earliest-starting match is dropped
+// without notice to make room for later ones.
+//
+// ```novo ignore
+// libtree_sitter.ts_query_cursor_set_match_limit(cursor, 64)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_query_cursor_set_match_limit")
 fn ts_query_cursor_set_match_limit(cursor: Int, limit: Int) [ffi]
 
-// Ask whether the cursor exceeded its maximum number of in-progress
-// matches during its last execution.
+// Ask whether a cursor exceeded its match limit during its last
+// execution.
 //
-// Returns 1 when it did.  A 1 means the results are incomplete, and
-// that a larger match limit would return more of them.
+// Answers 1 when it did, which means some matches were dropped, and 0
+// when it did not.
+//
+// ```novo ignore
+// let incomplete = libtree_sitter.ts_query_cursor_did_exceed_match_limit(cursor) == 1
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_query_cursor_did_exceed_match_limit")
 fn ts_query_cursor_did_exceed_match_limit(cursor: Int) -> Int [ffi]
 
-// Set the range of bytes in which the query will be executed.
+// Set the range of bytes in which a cursor executes its query.
+//
+// ```novo ignore
+// libtree_sitter.ts_query_cursor_set_byte_range(cursor, 0, 100)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_query_cursor_set_byte_range")
 fn ts_query_cursor_set_byte_range(cursor: Int, start_byte: Int, end_byte: Int) [ffi]
 
-// Advance to the next match of the currently running query.
+// Advance to the next match of the query running on a cursor.
 //
-// `match_out` is the address of a caller-owned `TSQueryMatch`.  Returns
-// 1 when a match was written there, and 0 when the matches are
-// exhausted.
+// `match_out` is the address of a `TSQueryMatch` the caller reserved,
+// sixteen bytes on a 64-bit system.  Answers 1 when a match was written
+// there, and 0 when there are no more matches.  The cursor must be
+// running a query, which only `ts_query_cursor_exec` starts.
+//
+// ```novo ignore
+// while libtree_sitter.ts_query_cursor_next_match(cursor, match_slot) == 1
+//     let pattern = ptr.load_u8(match_slot + 4)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_query_cursor_next_match")
 fn ts_query_cursor_next_match(cursor: Int, match_out: Int) -> Int [ffi]
 
-// Remove a match from the cursor by its identifier.
+// Remove a match from a cursor by its identifier.
 //
-// The match no longer appears in the results.  This is how a caller
-// drops a match that its own predicate rejected.
+// The identifier is the first field of a `TSQueryMatch`.  The match no
+// longer appears in the results.  A caller uses this to drop a match
+// that a predicate of its own rejected.
+//
+// ```novo ignore
+// libtree_sitter.ts_query_cursor_remove_match(cursor, match_id)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_query_cursor_remove_match")
 fn ts_query_cursor_remove_match(cursor: Int, match_id: Int) [ffi]
 
-// Get the number of distinct node types in the language.
+// Get the number of distinct node types in a language.
+//
+// ```novo ignore
+// let symbols = libtree_sitter.ts_language_symbol_count(language)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_language_symbol_count")
 fn ts_language_symbol_count(language: Int) -> Int [ffi]
 
-// Get a node type string for the given numerical identifier.
+// Get the node type string for a numerical identifier.
 //
-// The return value is the address of a NUL-terminated C string the
-// language owns.
+// Answers the address of a C string the language owns, or 0 for an
+// identifier out of range.
+//
+// ```novo ignore
+// println(ptr.read_str(libtree_sitter.ts_language_symbol_name(language, symbol)))
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_language_symbol_name")
 fn ts_language_symbol_name(language: Int, symbol: Int) -> Int [ffi]
 
-// Get the numerical identifier for the given node type string.
+// Get the numerical identifier for a node type string.
 //
 // `length` is the length of the string in bytes.  `is_named` is 1 for a
 // named node type and 0 for an anonymous one, and the two are separate
-// sets of names.
+// sets of names.  Answers 0 when no node type has that name.  The name
+// `"ERROR"` answers 65535, the identifier of error nodes.
+//
+// ```novo ignore
+// let pair = libtree_sitter.ts_language_symbol_for_name(language, "pair", 4, 1)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_language_symbol_for_name")
 fn ts_language_symbol_for_name(language: Int, name: Str, length: Int, is_named: Int) -> Int [ffi]
 
-// Get the number of distinct field names in the language.
+// Get the number of distinct field names in a language.
+//
+// Field identifiers run from 1 to this count.
+//
+// ```novo ignore
+// let fields = libtree_sitter.ts_language_field_count(language)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_language_field_count")
 fn ts_language_field_count(language: Int) -> Int [ffi]
 
-// Get the field name string for the given numerical identifier.
+// Get the field name string for a numerical identifier.
 //
-// The return value is the address of a NUL-terminated C string the
-// language owns.
+// Answers the address of a C string the language owns, or 0 for an
+// identifier out of range.
+//
+// ```novo ignore
+// println(ptr.read_str(libtree_sitter.ts_language_field_name_for_id(language, 1)))
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_language_field_name_for_id")
 fn ts_language_field_name_for_id(language: Int, field_id: Int) -> Int [ffi]
 
-// Get the numerical identifier for the given field name string.
+// Get the numerical identifier for a field name string.
 //
-// `length` is the length of the name in bytes.
+// `length` is the length of the name in bytes.  Answers 0 when no field
+// has that name.
+//
+// ```novo ignore
+// let key = libtree_sitter.ts_language_field_id_for_name(language, "key", 3)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_language_field_id_for_name")
 fn ts_language_field_id_for_name(language: Int, name: Str, length: Int) -> Int [ffi]
 
-// Check whether the given node type identifier is named, anonymous or
-// auxiliary.
+// Ask whether a node type identifier belongs to named nodes, anonymous
+// nodes or hidden nodes.
 //
-// Returns 0 for a regular named node type, 1 for an anonymous one and
-// 2 for one the parser generated for itself.
+// Answers 0, `TSSymbolTypeRegular`, for a named node type, 1,
+// `TSSymbolTypeAnonymous`, for an anonymous one, and 2,
+// `TSSymbolTypeAuxiliary`, for a hidden one.  Hidden nodes are never
+// returned from the API.
+//
+// ```novo ignore
+// let kind = libtree_sitter.ts_language_symbol_type(language, symbol)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_language_symbol_type")
 fn ts_language_symbol_type(language: Int, symbol: Int) -> Int [ffi]
 
-// Get the ABI version number for this language.
+// Get the ABI version number of a language.
 //
+// The number says which version of tree-sitter generated the language.
 // A parser accepts a language only when the number is between the
 // library's `TREE_SITTER_MIN_COMPATIBLE_LANGUAGE_VERSION` and its
-// `TREE_SITTER_LANGUAGE_VERSION`.
+// `TREE_SITTER_LANGUAGE_VERSION`, which are 13 and 14 in
+// libtree-sitter 0.20.8.
+//
+// ```novo ignore
+// let abi = libtree_sitter.ts_language_version(language)
+// ```
 pub @ffi(library = "tree-sitter", symbol = "ts_language_version")
 fn ts_language_version(language: Int) -> Int [ffi]
