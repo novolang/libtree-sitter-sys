@@ -1,6 +1,6 @@
 [package]
 name        = "libtree-sitter-sys"
-version     = "0.1.1"
+version     = "0.1.2"
 description = "Bindings over libtree-sitter, the incremental parsing library: the parser, the syntax tree, the query engine and the language table, one declaration per C entry point."
 license     = "Apache-2.0"
 
@@ -23,7 +23,7 @@ wraps       = "libtree-sitter"
 tags        = ["ffi", "tree-sitter", "parser", "parsing", "syntax", "bindings"]
 repository  = "https://github.com/novolang/libtree-sitter-sys"
 maintainers = ["novo-lang"]
-novo        = ">= 0.8.9"
+novo        = ">= 0.23.0"
 
 [docs.pages]
 "README.md" = "The C entry points of libtree-sitter, one novo-lang declaration each"
